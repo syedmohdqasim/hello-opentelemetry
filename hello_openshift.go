@@ -107,7 +107,7 @@ func initProvider() (oteltrace.TracerProvider, func(context.Context) error, erro
 }
 
 type HelloHandler struct {
-	ctx context.Context
+	ctx      context.Context
 	response string
 }
 
@@ -117,15 +117,15 @@ func (h *HelloHandler) helloHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type CounterHandler struct {
-	ctx context.Context
-    counter int
+	ctx     context.Context
+	counter int
 }
 
 func (ct *CounterHandler) counterHandler(w http.ResponseWriter, r *http.Request) {
-    fmt.Println(ct.counter)
-    ct.counter++
+	fmt.Println(ct.counter)
+	ct.counter++
 	msg := fmt.Sprintf("Counter: %d", ct.counter)
-    fmt.Fprintln(w, msg)
+	fmt.Fprintln(w, msg)
 	logWithContext(ct.ctx).Info("Counter", zap.String("response", msg))
 }
 
@@ -134,22 +134,22 @@ type NotFoundHandler struct {
 }
 
 func (nf *NotFoundHandler) notFoundHandler(w http.ResponseWriter, r *http.Request) {
-	    if r.URL.Path != "/" {
-            w.WriteHeader(404)
-            w.Write([]byte("404 - not found\n"))
-			msg := "404 - not found"
-	        logWithContext(nf.ctx).Info("NotFound", zap.String("response", msg))
-            return
-        }
-		msg := "This page does nothing, add a '/count' or a '/hello'"
-		fmt.Fprintln(w, msg)
-	    logWithContext(nf.ctx).Info("Home", zap.String("response", msg))
+	if r.URL.Path != "/" {
+		w.WriteHeader(404)
+		w.Write([]byte("404 - not found\n"))
+		msg := "404 - not found"
+		logWithContext(nf.ctx).Info("NotFound", zap.String("response", msg))
+		return
+	}
+	msg := "This page does nothing, add a '/count' or a '/hello'"
+	fmt.Fprintln(w, msg)
+	logWithContext(nf.ctx).Info("Home", zap.String("response", msg))
 }
 
 func listenAndServe(ctx context.Context, port string, handler http.Handler) {
 	msg := fmt.Sprintf("serving on %s\n", port)
 	logWithContext(ctx).Info(msg, zap.String("port", port))
-	if err := http.ListenAndServe(":"+port, handler); err != nil {
+	if err := http.ListenAndServeTLS(":"+port, "/etc/tls-config/tls.crt", "/etc/tls-config/tls.key", handler); err != nil {
 		msg := fmt.Sprintf("ListenAndServe: " + err.Error())
 		logWithContext(ctx).Panic(msg)
 	}
@@ -173,7 +173,7 @@ func withTracing(handler http.Handler, tp oteltrace.TracerProvider) http.Handler
 }
 
 func main() {
-	ctx :=context.Background()
+	ctx := context.Background()
 
 	tp, shutdown, err := initProvider()
 	if err != nil {
@@ -202,7 +202,7 @@ func main() {
 		logWithContext(ctx).Info(msg)
 
 		<-time.After(time.Second)
-	    logWithContext(ctx).Info("Done!")
+		logWithContext(ctx).Info("Done!")
 		span.End()
 	}
 	helloResponse := os.Getenv("RESPONSE")
@@ -211,11 +211,11 @@ func main() {
 	}
 	hello := &HelloHandler{
 		response: helloResponse,
-		ctx: ctx,
+		ctx:      ctx,
 	}
 
 	count := &CounterHandler{
-		ctx: ctx,
+		ctx:     ctx,
 		counter: 0,
 	}
 

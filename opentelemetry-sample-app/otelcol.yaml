@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+  name: otelcol-cabundle
+  namespace: otel-dev
+---
+apiVersion: opentelemetry.io/v1alpha1
+kind: OpenTelemetryCollector
+metadata:
+  name: otelcol
+  namespace: otel-dev
+spec:
+  config: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+          http:
+    processors:
+      batch:
+
+    exporters:
+      logging:
+        loglevel: debug
+
+      jaeger:
+        endpoint: jaegerex-collector-headless.otel-dev.svc:14250
+        tls:
+          ca_file: "/etc/pki/ca-trust/source/service-ca/service-ca.crt"
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [logging,jaeger]
+  mode: deployment
+  resources: {}
+  targetAllocator: {}
+  volumeMounts:
+  - mountPath: /etc/pki/ca-trust/source/service-ca
+    name: cabundle-volume
+  volumes:
+  - configMap:
+      name: otelcol-cabundle
+    name: cabundle-volume
