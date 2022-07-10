@@ -23,7 +23,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/signal"
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -107,14 +106,44 @@ func initProvider() (oteltrace.TracerProvider, func(context.Context) error, erro
 	return tracerProvider, tracerProvider.Shutdown, nil
 }
 
-func helloHandler(w http.ResponseWriter, r *http.Request) {
-	response := os.Getenv("RESPONSE")
-	if len(response) == 0 {
-		response = "Hello OpenShift!"
-	}
+type HelloHandler struct {
+	ctx context.Context
+	response string
+}
 
-	fmt.Fprintln(w, response)
-	logWithContext(nil).Info("Servicing request", zap.String("response", response))
+func (h *HelloHandler) helloHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintln(w, h.response)
+	logWithContext(h.ctx).Info("Servicing request", zap.String("response", h.response))
+}
+
+type CounterHandler struct {
+	ctx context.Context
+    counter int
+}
+
+func (ct *CounterHandler) counterHandler(w http.ResponseWriter, r *http.Request) {
+    fmt.Println(ct.counter)
+    ct.counter++
+	msg := fmt.Sprintf("Counter: %d", ct.counter)
+    fmt.Fprintln(w, msg)
+	logWithContext(ct.ctx).Info("Counter", zap.String("response", msg))
+}
+
+type NotFoundHandler struct {
+	ctx context.Context
+}
+
+func (nf *NotFoundHandler) notFoundHandler(w http.ResponseWriter, r *http.Request) {
+	    if r.URL.Path != "/" {
+            w.WriteHeader(404)
+            w.Write([]byte("404 - not found\n"))
+			msg := "404 - not found"
+	        logWithContext(nf.ctx).Info("NotFound", zap.String("response", msg))
+            return
+        }
+		msg := "This page does nothing, add a '/count' or a '/hello'"
+		fmt.Fprintln(w, msg)
+	    logWithContext(nf.ctx).Info("Home", zap.String("response", msg))
 }
 
 func listenAndServe(ctx context.Context, port string, handler http.Handler) {
@@ -140,12 +169,11 @@ func withTracing(handler http.Handler, tp oteltrace.TracerProvider) http.Handler
 	}
 	// With Noop TracerProvider, the otelhttp still handles context propagation.
 	// See https://github.com/open-telemetry/opentelemetry-go/tree/main/example/passthrough
-	return otelhttp.NewHandler(handler, "Example", opts...)
+	return otelhttp.NewHandler(handler, "OTelHTTP-Example", opts...)
 }
 
 func main() {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
+	ctx :=context.Background()
 
 	tp, shutdown, err := initProvider()
 	if err != nil {
@@ -168,33 +196,42 @@ func main() {
 	}
 	ctx = newContext(ctx)
 	logger = logWithContext(ctx)
-	ctx, span := tracer.Start(
-		ctx,
-		"CollectorExporter-Example",
-		oteltrace.WithAttributes(commonAttrs...))
-	defer span.End()
 	for i := 0; i < 10; i++ {
-		_, iSpan := tracer.Start(ctx, fmt.Sprintf("Sample-%d", i))
+		_, span := tracer.Start(ctx, fmt.Sprintf("Sample-%d", i), oteltrace.WithAttributes(commonAttrs...))
 		msg := fmt.Sprintf("Doing really hard work (%d / 10)\n", i+1)
 		logWithContext(ctx).Info(msg)
 
 		<-time.After(time.Second)
-		iSpan.End()
+	    logWithContext(ctx).Info("Done!")
+		span.End()
 	}
-	logWithContext(ctx).Info("Done!")
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", helloHandler)
-	handler := withTracing(mux, tp)
+	helloResponse := os.Getenv("RESPONSE")
+	if len(helloResponse) == 0 {
+		helloResponse = "Hello OpenShift!"
+	}
+	hello := &HelloHandler{
+		response: helloResponse,
+		ctx: ctx,
+	}
+
+	count := &CounterHandler{
+		ctx: ctx,
+		counter: 0,
+	}
+
+	notFound := &NotFoundHandler{
+		ctx: ctx,
+	}
+
 	port := os.Getenv("PORT")
 	if len(port) == 0 {
 		port = "8080"
 	}
-	go listenAndServe(ctx, port, handler)
-
-	port = os.Getenv("SECOND_PORT")
-	if len(port) == 0 {
-		port = "8888"
-	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/hello", hello.helloHandler)
+	mux.HandleFunc("/count", count.counterHandler)
+	mux.HandleFunc("/", notFound.notFoundHandler)
+	handler := withTracing(mux, tp)
 	go listenAndServe(ctx, port, handler)
 
 	select {}
