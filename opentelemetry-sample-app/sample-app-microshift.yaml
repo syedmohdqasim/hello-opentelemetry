@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: sample-app
+  name: sample-app
+  namespace: otel-dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sample-app
+  template:
+    metadata:
+      labels:
+        app: sample-app
+    spec:
+      hostNetwork: true
+      volumes:
+      - name: sample-app-tls
+        secret:
+          secretName: sample-app-tls
+          defaultMode: 420
+      containers:
+      - image: quay.io/sallyom/otel-ex:microshift
+        imagePullPolicy: Always
+        name: sample-app
+        ports:
+          - containerPort: 4317
+            hostPort: 4317
+            protocol: TCP
+          - containerPort: 8888
+            hostPort: 8888
+            protocol: TCP
+        volumeMounts:
+        - name: sample-app-tls
+          mountPath: /etc/tls-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: sample-app
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: sample-app-tls
+  name: sample-app
+  namespace: otel-dev
+spec:
+  ports:
+  - name: web
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  selector:
+    app: sample-app
+  type: ClusterIP
+---
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: sample-app
+  namespace: otel-dev
+  labels:
+    app: sample-app
+spec:
+  host: sampleapp.microshift.local
+  path: /
+  to:
+    kind: Service
+    name: sample-app
+    weight: 100
+  port:
+    targetPort: web
+  tls:
+    termination: reencrypt
+  wildcardPolicy: None

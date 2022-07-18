@@ -76,9 +76,9 @@ func initProvider() (oteltrace.TracerProvider, func(context.Context) error, erro
 		return oteltrace.NewNoopTracerProvider(), nil, fmt.Errorf("failed to create resource: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	conn, err := grpc.DialContext(ctx, "otelcol-collector.otel-dev.svc:4317", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	conn, err := grpc.DialContext(ctx, "localhost:4317", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
 		return oteltrace.NewNoopTracerProvider(), nil, fmt.Errorf("failed to create gRPC connection to collector: %w", err)
 	}
