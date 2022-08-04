@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: otel-dev
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: sample-app
+  name: sample-app
+  namespace: otel-dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sample-app
+  template:
+    metadata:
+      labels:
+        app: sample-app
+    spec:
+      containers:
+      - image: quay.io/sallyom/otel-ex:hello
+        imagePullPolicy: Always
+        name: sample-app
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
+          limits:
+            cpu: 200m
+            memory: 400Mi
+        env:
+        - name: PORT
+          value: 9999
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: sample-app
+  name: sample-app
+  namespace: otel-dev
+spec:
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 9999
+    protocol: TCP
+  selector:
+    app: sample-app
+---
+kind: Ingress
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: sample-app
+  namespace: otel-dev
+  labels:
+    app: sample-app
+spec:
+  defaultBackend:
+    service:
+      name: sample-app
+      port:
+        number: 9999

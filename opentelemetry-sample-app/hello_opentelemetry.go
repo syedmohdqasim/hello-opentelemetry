@@ -19,11 +19,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
+	"os/user"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -39,33 +42,18 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-type loggerKeyType int
-
-const loggerKey loggerKeyType = iota
-
-var logger *zap.Logger
-
-func newContext(ctx context.Context, fields ...zap.Field) context.Context {
-	return context.WithValue(ctx, loggerKey, logWithContext(ctx))
-}
-
-func logWithContext(ctx context.Context) *zap.Logger {
-	logger, _ = zap.NewProduction()
-	if ctx == nil {
-		return logger
-	}
-	if ctxLogger, ok := ctx.Value(loggerKey).(zap.Logger); ok {
-		return &ctxLogger
-	} else {
-		return logger
+func logWithContext(span oteltrace.Span) log.Fields {
+	return log.Fields{
+		"span_id":  span.SpanContext().SpanID().String(),
+		"trace_id": span.SpanContext().TraceID().String(),
 	}
 }
 
 // Initializes an OTLP exporter, and configures the corresponding trace and
 // metric providers.
-func initProvider() (oteltrace.TracerProvider, func(context.Context) error, error) {
+func initProvider() (func(context.Context) error, error) {
+	log.Infof("Configuring TracerProvider")
 	ctx := context.Background()
-
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
 			// the service name used to display traces in backends
@@ -73,20 +61,20 @@ func initProvider() (oteltrace.TracerProvider, func(context.Context) error, erro
 		),
 	)
 	if err != nil {
-		return oteltrace.NewNoopTracerProvider(), nil, fmt.Errorf("failed to create resource: %w", err)
+		return nil, fmt.Errorf("failed to create resource: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	conn, err := grpc.DialContext(ctx, "localhost:4317", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	conn, err := grpc.DialContext(ctx, "otelcol-collector-headless.otel-dev.svc.cluster.local:4317", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
-		return oteltrace.NewNoopTracerProvider(), nil, fmt.Errorf("failed to create gRPC connection to collector: %w", err)
+		return nil, fmt.Errorf("failed to create gRPC connection to collector: %w", err)
 	}
 
 	// Set up a trace exporter
 	traceExporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithGRPCConn(conn))
 	if err != nil {
-		return oteltrace.NewNoopTracerProvider(), nil, fmt.Errorf("failed to create trace exporter: %w", err)
+		return nil, fmt.Errorf("failed to create trace exporter: %w", err)
 	}
 
 	// Register the trace exporter with a TracerProvider, using a batch
@@ -102,8 +90,9 @@ func initProvider() (oteltrace.TracerProvider, func(context.Context) error, erro
 	// set global propagator to tracecontext (the default is no-op).
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 
+	log.Infof("TracerProvider configured")
 	// Shutdown will flush any remaining spans and shut down the exporter.
-	return tracerProvider, tracerProvider.Shutdown, nil
+	return tracerProvider.Shutdown, nil
 }
 
 type HelloHandler struct {
@@ -112,8 +101,11 @@ type HelloHandler struct {
 }
 
 func (h *HelloHandler) helloHandler(w http.ResponseWriter, r *http.Request) {
+	tracer := otel.Tracer("hello")
+	_, span := tracer.Start(h.ctx, "helloHandler")
+	defer span.End()
 	fmt.Fprintln(w, h.response)
-	logWithContext(h.ctx).Info("Servicing request", zap.String("response", h.response))
+	log.WithFields(logWithContext(span)).Info("Hello request", zap.String("response", h.response))
 }
 
 type CounterHandler struct {
@@ -122,11 +114,14 @@ type CounterHandler struct {
 }
 
 func (ct *CounterHandler) counterHandler(w http.ResponseWriter, r *http.Request) {
+	tracer := otel.Tracer("count")
+	_, span := tracer.Start(ct.ctx, "counterHandler")
+	defer span.End()
 	fmt.Println(ct.counter)
 	ct.counter++
 	msg := fmt.Sprintf("Counter: %d", ct.counter)
 	fmt.Fprintln(w, msg)
-	logWithContext(ct.ctx).Info("Counter", zap.String("response", msg))
+	log.WithFields(logWithContext(span)).Info("Counter", zap.String("response", msg))
 }
 
 type NotFoundHandler struct {
@@ -134,25 +129,45 @@ type NotFoundHandler struct {
 }
 
 func (nf *NotFoundHandler) notFoundHandler(w http.ResponseWriter, r *http.Request) {
+	tracer := otel.Tracer("notfound")
+	_, span := tracer.Start(nf.ctx, "notFoundHandler")
+	defer span.End()
 	if r.URL.Path != "/" {
 		w.WriteHeader(404)
 		w.Write([]byte("404 - not found\n"))
 		msg := "404 - not found"
-		logWithContext(nf.ctx).Info("NotFound", zap.String("response", msg))
+		log.WithFields(logWithContext(span)).Info("NotFound", zap.String("response", msg))
 		return
 	}
 	msg := "This page does nothing, add a '/count' or a '/hello'"
 	fmt.Fprintln(w, msg)
-	logWithContext(nf.ctx).Info("Home", zap.String("response", msg))
+	log.WithFields(logWithContext(span)).Info("Home", zap.String("response", msg))
 }
 
-func listenAndServe(ctx context.Context, port string, handler http.Handler) {
-	msg := fmt.Sprintf("serving on %s\n", port)
-	logWithContext(ctx).Info(msg, zap.String("port", port))
-	if err := http.ListenAndServeTLS(":"+port, "/etc/tls-config/tls.crt", "/etc/tls-config/tls.key", handler); err != nil {
-		msg := fmt.Sprintf("ListenAndServe: " + err.Error())
-		logWithContext(ctx).Panic(msg)
+func listenAndServe(ctx context.Context, port, uid string, handler http.Handler) {
+	attrs := []attribute.KeyValue{
+		attribute.String("uid", uid),
 	}
+	log.Infof("serving on %s", port)
+	tracer := otel.Tracer("listenandserve")
+	_, span := tracer.Start(ctx, "listenandserve", oteltrace.WithAttributes(attrs...))
+	defer span.End()
+	_, err := os.Stat("/etc/tls-config/tls.crt")
+	if err == nil {
+		if err := http.ListenAndServeTLS(":"+port, "/etc/tls-config/tls.crt", "/etc/tls-config/tls.key", handler); err != nil {
+			msg := fmt.Sprintf("ListenAndServe: " + err.Error())
+			log.WithFields(logWithContext(span)).Panic(msg)
+		}
+		return
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		if err := http.ListenAndServe(":"+port, handler); err != nil {
+			msg := fmt.Sprintf("ListenAndServe: " + err.Error())
+			log.WithFields(logWithContext(span)).Panic(msg)
+		}
+		return
+	}
+	log.Fatalf("failed to start serving: %w", err)
 }
 
 // propagators returns the recommended set of propagators.
@@ -161,53 +176,61 @@ func propagators() propagation.TextMapPropagator {
 }
 
 // withTracing adds tracing to requests if the incoming request is sampled
-func withTracing(handler http.Handler, tp oteltrace.TracerProvider) http.Handler {
+func withTracing(handler http.Handler) http.Handler {
+	// With Noop TracerProvider, the otelhttp still handles context propagation.
 	opts := []otelhttp.Option{
 		otelhttp.WithPropagators(propagators()),
 		otelhttp.WithPublicEndpoint(),
-		otelhttp.WithTracerProvider(tp),
+		otelhttp.WithTracerProvider(otel.GetTracerProvider()),
 	}
-	// With Noop TracerProvider, the otelhttp still handles context propagation.
-	// See https://github.com/open-telemetry/opentelemetry-go/tree/main/example/passthrough
-	return otelhttp.NewHandler(handler, "OTelHTTP-Example", opts...)
+	return otelhttp.NewHandler(handler, "otel-example", opts...)
+}
+
+func init() {
+	log.SetFormatter(&log.TextFormatter{
+		DisableColors: true,
+		FullTimestamp: true,
+	})
+
+	log.SetOutput(os.Stdout)
+	log.SetLevel(log.TraceLevel)
 }
 
 func main() {
+	log.Infof("Starting server")
 	ctx := context.Background()
-
-	tp, shutdown, err := initProvider()
+	shutdown, err := initProvider()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("failed to configure TracerProvider: %w", err)
 	}
 	defer func() {
 		if err := shutdown(ctx); err != nil {
-			log.Fatal("failed to shutdown TracerProvider: %w", err)
+			log.Fatalf("failed to shutdown TracerProvider: %w", err)
 		}
 	}()
 
-	tracer := otel.Tracer("otel-dev-tracer")
+	tracer := otel.Tracer("main")
 
 	// Attributes represent additional key-value descriptors that can be bound
 	// to a metric observer or recorder.
 	commonAttrs := []attribute.KeyValue{
-		attribute.String("attrA", "chocolate"),
-		attribute.String("attrB", "raspberry"),
-		attribute.String("attrC", "vanilla"),
+		attribute.String("attrA", "info"),
+		attribute.String("attrB", "important info"),
+		attribute.String("attrC", "more important info"),
 	}
-	ctx = newContext(ctx)
-	logger = logWithContext(ctx)
-	for i := 0; i < 10; i++ {
-		_, span := tracer.Start(ctx, fmt.Sprintf("Sample-%d", i), oteltrace.WithAttributes(commonAttrs...))
-		msg := fmt.Sprintf("Doing really hard work (%d / 10)\n", i+1)
-		logWithContext(ctx).Info(msg)
+	uid, err := user.Current()
+	if err != nil {
+		log.Fatalf("failed to get current user: %w", err)
+	}
 
-		<-time.After(time.Second)
-		logWithContext(ctx).Info("Done!")
-		span.End()
-	}
+	_, span := tracer.Start(ctx, fmt.Sprintf("user: %s", uid.Uid), oteltrace.WithAttributes(commonAttrs...))
+	defer span.End()
+	msg := fmt.Sprintf("UID: %s Time: %s", uid.Uid, time.Now().String())
+	log.WithFields(logWithContext(span)).Info(msg)
+
 	helloResponse := os.Getenv("RESPONSE")
 	if len(helloResponse) == 0 {
-		helloResponse = "Hello OpenShift!"
+		helloResponse = "Hello OpenTelemetry!"
 	}
 	hello := &HelloHandler{
 		response: helloResponse,
@@ -231,8 +254,8 @@ func main() {
 	mux.HandleFunc("/hello", hello.helloHandler)
 	mux.HandleFunc("/count", count.counterHandler)
 	mux.HandleFunc("/", notFound.notFoundHandler)
-	handler := withTracing(mux, tp)
-	go listenAndServe(ctx, port, handler)
+	handler := withTracing(mux)
+	go listenAndServe(ctx, port, uid.Uid, handler)
 
 	select {}
 }

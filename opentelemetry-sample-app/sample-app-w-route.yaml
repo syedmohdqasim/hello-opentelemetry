@@ -1,3 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: otel-dev
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -21,9 +26,16 @@ spec:
           secretName: sample-app-tls
           defaultMode: 420
       containers:
-      - image: quay.io/sallyom/otel-ex:otel
+      - image: quay.io/sallyom/otel-ex:hello
         imagePullPolicy: Always
         name: sample-app
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
+          limits:
+            cpu: 200m
+            memory: 400Mi
         volumeMounts:
         - name: sample-app-tls
           mountPath: /etc/tls-config
@@ -40,7 +52,7 @@ metadata:
 spec:
   ports:
   - name: web
-    port: 8080
+    port: 80
     targetPort: 8080
     protocol: TCP
   selector:

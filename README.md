@@ -1,35 +1,49 @@
-## Hello, OpenShift! ##
+## Hello, Kubernetes, OpenShift & OpenTelemetry! ##
 
-A sample app that is built using the [S2I golang builder](https://github.com/sclorg/golang-container).
-
-This example will serve an HTTP response of "Hello OpenShift!" written in Golang. It is also
-intended to be used with an evolving [Golang Source-to-Image builder image](https://github.com/sclorg/golang-container).
-
-Once the image-stream is loaded into OpenShift, you can easily deploy it by doing:
-
-    $ oc new-app golang~https://github.com/sclorg/golang-ex.git
-
-Note: this is reused [example hello_openshift from OpenShift Origin](https://github.com/openshift/origin), separating it out will allow only the need to clone this example repo instead of all of the origin one.
+This example will serve an HTTP response of "Hello OpenTelemetry!".
 
 The response message can be set by using the RESPONSE environment
 variable.  You will need to edit the pod definition and add an
 environment variable to the container definition and run the new pod.
 
-Then you can re-create the pod as with the first example, get the new IP
-address, and then curl will show your new message:
+The hello response is served at `/hello`
+There is also a counter at `/count`
 
-    $ curl 10.1.0.2:8888
-     Hello World!
+```bash
+curl service-address:8080/hello or route/hello
+Hello OpenTelemetry!
+```
 
-To test from external network, you need to create router. Please refer to [Running the router](https://github.com/openshift/origin/blob/master/docs/routing.md)
+### Create the example application
 
-The container doesn't expose any ports, this will require you to expose it manually.
-For example:
+```
+All resources are expected to be created in the `otel-dev` namespace. Update the definitions accordingly if not running in
+this namespace.
+```
 
-    $ oc expose dc/golang-ex --port=8888
+Kubernetes cluster
 
-and lastly if you want to expose a route, by doing:
+```bash
+kubectl apply -f https://raw.githubusercontent.com/sallyom/golang-ex/master/opentelemetry-sample-app/sample-app-w-ingress.yaml
+```
 
-    $ oc expose service/golang-ex
+OpenShift cluster
 
+```bash
+kubectl apply -f https://raw.githubusercontent.com/sallyom/golang-ex/master/opentelemetry-sample-app/sample-app-w-route.yaml
+```
 
+### View OpenTelemetry trace data
+
+The application is instrumented to generate OpenTelemetry spans and logs with the span & trace id injected.
+To view the traces, if the OpenTelemetry Operator & the Jaeger Operator are running in the cluster, simply
+create an OpenTelemetryCollector instance and a Jaeger instance with the following commands.
+
+*The following commands assume the OpenTelemetry Operator & Jaeger Operator are running in the cluster*
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/sallyom/golang-ex/master/opentelemetry-sample-app/otelcol.yaml
+kubectl apply -f https://raw.githubusercontent.com/sallyom/golang-ex/master/opentelemetry-sample-app/jaeger.yaml
+```
+
+To view the traces, access the route for the Jaeger UI. A `test-service` should appear.

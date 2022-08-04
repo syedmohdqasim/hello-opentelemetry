@@ -1,3 +1,7 @@
+# This file is meant to be applied with an OpenShift cluster
+# This creates a configmap with the CA for TLS and an OpenTelemetryCollector CR
+# Apply this if running the OpenTelemetry Operator
+# This applies in an 'otel-dev' namespace, modify if running elsewhere
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -26,6 +30,7 @@ spec:
         loglevel: debug
 
       jaeger:
+        # otel-dev is the name of the namespace, modify accordingly
         endpoint: jaegerex-collector-headless.otel-dev.svc:14250
         tls:
           ca_file: "/etc/pki/ca-trust/source/service-ca/service-ca.crt"
