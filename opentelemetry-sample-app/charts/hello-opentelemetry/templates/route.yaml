@@ -1,0 +1,18 @@
+{{- $fullName := include "hello-opentelemetry.fullname" . -}}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ $fullName }}
+  labels:
+    app: {{ $fullName }}
+spec:
+  path: /
+  to:
+    kind: Service
+    name: {{ $fullName }}
+    weight: 100
+  port:
+    targetPort: web
+  tls:
+    termination: reencrypt
+  wildcardPolicy: None

@@ -1,0 +1,18 @@
+{{- $fullName := include "hello-opentelemetry.fullname" . -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hello-opentelemetry.fullname" . }}
+  labels:
+    app: {{ $fullName }}
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: {{ .Values.tlsSecretName }}
+spec:
+  ports:
+  - name: web
+    port: 80
+    targetPort: 8080
+    protocol: TCP
+  selector:
+    app: {{ $fullName }}
+  type: ClusterIP

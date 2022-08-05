@@ -42,6 +42,10 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+const (
+	appNamespace = "otel-dev"
+)
+
 func logWithContext(span oteltrace.Span) log.Fields {
 	return log.Fields{
 		"span_id":  span.SpanContext().SpanID().String(),
@@ -64,9 +68,10 @@ func initProvider() (func(context.Context) error, error) {
 		return nil, fmt.Errorf("failed to create resource: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	conn, err := grpc.DialContext(ctx, "otelcol-collector-headless.otel-dev.svc.cluster.local:4317", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	otelcolSvcAddress := fmt.Sprintf("otelcol-collector-headless.%s.svc.cluster.local:4317", appNamespace)
+	conn, err := grpc.DialContext(ctx, otelcolSvcAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gRPC connection to collector: %w", err)
 	}

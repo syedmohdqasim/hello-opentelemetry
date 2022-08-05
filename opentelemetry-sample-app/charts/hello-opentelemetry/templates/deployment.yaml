@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hello-opentelemetry.fullname" . }}
+  labels:
+    app: {{ include "hello-opentelemetry.fullname" . }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "hello-opentelemetry.fullname" . }}
+  template:
+    metadata:
+      annotations:
+        #sidecar.opentelemetry.io/inject: "true"
+      labels:
+        app: {{ include "hello-opentelemetry.fullname" . }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      volumes:
+        - name: {{ .Values.tlsSecretName }}
+          secret:
+            secretName: {{ .Values.tlsSecretName }}
+            defaultMode: 420
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            allowPrivilegeEscalation: false
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          resources:
+            requests:
+              cpu: 100m
+              memory: 200Mi
+            limits:
+              cpu: 200m
+              memory: 400Mi
+          volumeMounts:
+            - name: {{ .Values.tlsSecretName }}
+              mountPath: /etc/tls-config
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
