@@ -1,7 +1,7 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: otel-dev
+# apiVersion: v1
+# kind: Namespace
+# metadata:
+#   name: ai4cloudops
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -9,7 +9,7 @@ metadata:
   labels:
     app: sample-app
   name: sample-app
-  namespace: otel-dev
+  namespace: ai4cloudops
 spec:
   replicas: 1
   selector:
@@ -48,7 +48,7 @@ metadata:
   annotations:
     service.beta.openshift.io/serving-cert-secret-name: sample-app-tls
   name: sample-app
-  namespace: otel-dev
+  namespace: ai4cloudops
 spec:
   ports:
   - name: web
@@ -63,7 +63,7 @@ kind: Route
 apiVersion: route.openshift.io/v1
 metadata:
   name: sample-app
-  namespace: otel-dev
+  namespace: ai4cloudops
   labels:
     app: sample-app
 spec:

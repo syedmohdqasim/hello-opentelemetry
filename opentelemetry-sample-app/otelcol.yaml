@@ -8,13 +8,13 @@ metadata:
   annotations:
     service.beta.openshift.io/inject-cabundle: "true"
   name: otelcol-cabundle
-  namespace: otel-dev
+  namespace: ai4cloudops
 ---
 apiVersion: opentelemetry.io/v1alpha1
 kind: OpenTelemetryCollector
 metadata:
   name: otelcol
-  namespace: otel-dev
+  namespace: ai4cloudops
 spec:
   config: |
     receivers:
