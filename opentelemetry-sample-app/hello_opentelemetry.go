@@ -43,7 +43,7 @@ import (
 )
 
 const (
-	appNamespace = "otel-dev"
+	appNamespace = "ai4cloudops"
 )
 
 func logWithContext(span oteltrace.Span) log.Fields {
