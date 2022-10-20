@@ -26,7 +26,7 @@ spec:
           secretName: sample-app-tls
           defaultMode: 420
       containers:
-      - image: quay.io/sallyom/otel-ex:hello
+      - image: localhost:5000/sample-app
         imagePullPolicy: Always
         name: sample-app
         resources:
